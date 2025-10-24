@@ -5,10 +5,10 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { MoreHorizontal, Eye, Download, Edit, Trash2, Search, Ligature as Signature } from "lucide-react"
-import { createClient } from "@/lib/supabase/client"
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { SignatureModal } from "./signature-modal"
+import { getAlbaranes, deleteAlbaran } from "@/app/actions/albaranes-actions"
 
 // *** TIPADO Y DATOS DE EJEMPLO para reserva (fallback) ***
 interface Albaran {
@@ -110,35 +110,34 @@ export function AlbaranesList() {
     router.push(`/facturacion/albaran/editar/${albaranId}`)
   }
 
-  // ** LÓGICA PARA CARGAR DATOS DE SUPABASE **
-  useEffect(() => {
-    const fetchAlbaranes = async () => {
-      const supabase = createClient()
+  const handleDelete = async (albaranId: string) => {
+    if (!confirm("¿Estás seguro de que deseas eliminar este albarán?")) return
 
-      // Reemplaza 'albaranes' con el nombre real de tu tabla en Supabase
-      const { data, error } = await supabase.from("albaranes").select("*").order("fechaEmision", { ascending: false })
-
-      if (error) {
-        console.error("Error cargando albaranes:", error)
-        // Usar datos estáticos como fallback si falla la conexión
-        setAlbaranes(albaranesData)
-      } else {
-        // Mapear los datos de Supabase al formato local
-        setAlbaranes(
-          data.map(
-            (a) =>
-              ({
-                ...a,
-                id: a.numero_albaran || a.id,
-                signed: !!a.signed_at,
-              }) as Albaran,
-          ),
-        )
-      }
-      setIsLoading(false)
+    const result = await deleteAlbaran(albaranId)
+    if (result.success) {
+      // Recargar la lista
+      loadAlbaranes()
+    } else {
+      alert(`Error al eliminar: ${result.error}`)
     }
+  }
 
-    fetchAlbaranes()
+  const loadAlbaranes = async () => {
+    setIsLoading(true)
+    const result = await getAlbaranes()
+
+    if (result.success) {
+      setAlbaranes(result.data)
+    } else {
+      console.error("Error cargando albaranes:", result.error)
+      // Usar datos estáticos como fallback si falla la conexión
+      setAlbaranes(albaranesData)
+    }
+    setIsLoading(false)
+  }
+
+  useEffect(() => {
+    loadAlbaranes()
   }, [])
 
   // Filtrado (se mantiene igual)
@@ -246,7 +245,7 @@ export function AlbaranesList() {
                               <Signature className="mr-2 h-4 w-4" />
                               Firmar {!albaran.signed ? "" : "(Firmado)"}
                             </DropdownMenuItem>
-                            <DropdownMenuItem className="text-red-600">
+                            <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(albaran.id)}>
                               <Trash2 className="mr-2 h-4 w-4" />
                               Eliminar
                             </DropdownMenuItem>
@@ -268,7 +267,6 @@ export function AlbaranesList() {
         </CardContent>
       </Card>
 
-      {/* Modal de Firma */}
       {selectedAlbaran && (
         <SignatureModal
           isOpen={showSignatureModal}
@@ -276,8 +274,9 @@ export function AlbaranesList() {
           albaranId={selectedAlbaran.id}
           onSignatureSave={(data) => {
             console.log("Firma guardada para el albarán:", selectedAlbaran.id, data)
-            // Implementar aquí la lógica de Supabase para actualizar el albarán
             setShowSignatureModal(false)
+            // Recargar la lista para mostrar el estado actualizado
+            loadAlbaranes()
           }}
         />
       )}
