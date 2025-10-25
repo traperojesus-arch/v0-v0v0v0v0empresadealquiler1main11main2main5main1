@@ -1,105 +1,119 @@
 "use server"
 
-import { createServerClient } from "@/lib/supabase/server"
-import { revalidatePath } from "next/cache"
+import { createClient } from "@/lib/supabase/server"
 
-export async function getAlbaranes() {
-  console.log("[v0] Iniciando carga de albaranes...")
-  const supabase = await createServerClient()
+export interface Albaran {
+  id: string
+  numero_albaran: string
+  pedido_id: string
+  fecha_emision: string
+  fecha_entrega: string | null
+  estado: string
+  observaciones: string | null
+  firma_cliente: string | null
+  cliente: {
+    id: string
+    nombre: string
+    email: string
+  }
+}
 
-  const { data, error } = await supabase
+export async function getAlbaranes(): Promise<Albaran[]> {
+  const supabase = await createClient()
+
+  const { data: albaranesData, error: albaranesError } = await supabase
     .from("albaranes")
-    .select(
-      `
-      *,
-      pedidos:pedido_id (
-        id,
-        cliente_id,
-        usuarios:cliente_id (
-          id,
-          nombre,
-          email
-        )
-      )
-    `,
-    )
+    .select("*")
     .order("fecha_emision", { ascending: false })
 
-  if (error) {
-    console.error("[v0] Error cargando albaranes:", error)
-    return { success: false, error: error.message, data: [] }
+  if (albaranesError) {
+    console.error("[v0] Error al obtener albaranes:", albaranesError)
+    throw new Error(`Error al obtener albaranes: ${albaranesError.message}`)
   }
 
-  console.log("[v0] Albaranes cargados desde Supabase:", data?.length || 0)
+  if (!albaranesData || albaranesData.length === 0) {
+    return []
+  }
 
-  const albaranes = (data || []).map((a: any) => {
-    const clienteNombre = a.pedidos?.usuarios?.nombre || "Cliente desconocido"
-    const clienteEmail = a.pedidos?.usuarios?.email || ""
+  // Obtener los pedidos relacionados
+  const pedidoIds = albaranesData.map((a: any) => a.pedido_id).filter(Boolean)
+
+  if (pedidoIds.length === 0) {
+    return albaranesData.map((albaran: any) => ({
+      ...albaran,
+      cliente: {
+        id: "",
+        nombre: "Sin cliente",
+        email: "",
+      },
+    }))
+  }
+
+  const { data: pedidosData, error: pedidosError } = await supabase
+    .from("pedidos")
+    .select("id, cliente_id")
+    .in("id", pedidoIds)
+
+  if (pedidosError) {
+    console.error("[v0] Error al obtener pedidos:", pedidosError)
+  }
+
+  // Obtener los clientes relacionados
+  const clienteIds = (pedidosData || []).map((p: any) => p.cliente_id).filter(Boolean)
+
+  let clientesData: any[] = []
+  if (clienteIds.length > 0) {
+    const { data, error: clientesError } = await supabase
+      .from("usuarios")
+      .select("id, nombre, email")
+      .in("id", clienteIds)
+
+    if (clientesError) {
+      console.error("[v0] Error al obtener clientes:", clientesError)
+    } else {
+      clientesData = data || []
+    }
+  }
+
+  // Combinar los datos manualmente
+  const albaranes: Albaran[] = albaranesData.map((albaran: any) => {
+    const pedido = pedidosData?.find((p: any) => p.id === albaran.pedido_id)
+    const cliente = clientesData.find((c: any) => c.id === pedido?.cliente_id)
 
     return {
-      id: a.id,
-      pedido: a.pedido_id || "",
-      cliente: clienteNombre,
-      empresa: clienteEmail, // Usando email como empresa temporalmente
-      fechaEmision: a.fecha_emision || "",
-      fechaEntrega: a.fecha_entrega || "",
-      direccion: a.direccion_entrega || "",
-      articulos: 0, // TODO: Contar items del pedido
-      estado: a.estado || "pendiente",
-      facturado: a.estado === "facturado",
-      numeroFactura: null, // TODO: Obtener de la tabla facturas
-      signed: !!a.firma_cliente,
-      firmaNombre: a.firma_nombre || "",
-      firmaDNI: a.firma_dni || "",
+      id: albaran.id,
+      numero_albaran: albaran.numero_albaran,
+      pedido_id: albaran.pedido_id,
+      fecha_emision: albaran.fecha_emision,
+      fecha_entrega: albaran.fecha_entrega,
+      estado: albaran.estado,
+      observaciones: albaran.observaciones,
+      firma_cliente: albaran.firma_cliente,
+      cliente: {
+        id: cliente?.id || "",
+        nombre: cliente?.nombre || "Cliente desconocido",
+        email: cliente?.email || "",
+      },
     }
   })
 
-  console.log("[v0] Albaranes mapeados:", albaranes.length)
-  return { success: true, data: albaranes }
+  return albaranes
 }
 
-export async function updateAlbaranFirma(
-  albaranId: string,
-  firmaData: {
-    firma: string
-    nombre: string
-    dni: string
-    observaciones?: string
-  },
-) {
-  const supabase = await createServerClient()
+export async function updateAlbaranFirma(albaranId: string, firma: string): Promise<void> {
+  const supabase = await createClient()
 
   const { error } = await supabase
     .from("albaranes")
     .update({
-      firma_cliente: firmaData.firma,
-      firma_nombre: firmaData.nombre,
-      firma_dni: firmaData.dni,
-      firma_observaciones: firmaData.observaciones || "",
-      signed_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      firma_cliente: firma,
+      estado: "entregado",
+      fecha_entrega: new Date().toISOString().split("T")[0], // Solo la fecha, no timestamp
     })
     .eq("id", albaranId)
 
   if (error) {
-    console.error("[v0] Error actualizando firma:", error)
-    return { success: false, error: error.message }
+    console.error("[v0] Error al actualizar firma:", error)
+    throw new Error(`Error al actualizar firma: ${error.message}`)
   }
-
-  revalidatePath("/facturacion")
-  return { success: true }
-}
-
-export async function deleteAlbaran(albaranId: string) {
-  const supabase = await createServerClient()
-
-  const { error } = await supabase.from("albaranes").delete().eq("id", albaranId)
-
-  if (error) {
-    console.error("[v0] Error eliminando albarán:", error)
-    return { success: false, error: error.message }
-  }
-
-  revalidatePath("/facturacion")
-  return { success: true }
 }

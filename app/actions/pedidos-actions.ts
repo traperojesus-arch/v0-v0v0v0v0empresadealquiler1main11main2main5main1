@@ -245,7 +245,9 @@ export async function getPedidoById(id: string) {
           nombre,
           email,
           telefono,
-          direccion
+          calle,
+          ciudad,
+          codigo_postal
         )
       `)
       .eq("id", id)

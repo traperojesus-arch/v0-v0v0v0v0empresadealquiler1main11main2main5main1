@@ -5,75 +5,50 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { MoreHorizontal, Eye, Download, Edit, Trash2, Search, Ligature as Signature } from "lucide-react"
+import { getAlbaranes, type Albaran } from "@/app/actions/albaranes-actions"
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { SignatureModal } from "./signature-modal"
-import { getAlbaranes, deleteAlbaran } from "@/app/actions/albaranes-actions"
 
 // *** TIPADO Y DATOS DE EJEMPLO para reserva (fallback) ***
-interface Albaran {
-  id: string
-  pedido: string
-  cliente: string
-  empresa: string
-  fechaEmision: string
-  fechaEntrega: string
-  direccion: string
-  articulos: number
-  estado: string
-  facturado: boolean
-  numeroFactura: string | null
-  signed: boolean
-  firmaNombre?: string
-  firmaDNI?: string
-}
+// interface Albaran {
+//   id: string
+//   numero_albaran: string
+//   pedido_id: string | null
+//   fecha_emision: string
+//   fecha_entrega: string | null
+//   estado: string
+//   direccion_entrega: string
+//   observaciones: string | null
+//   responsable_entrega: string | null
+//   firma_cliente: string | null
+//   created_at: string
+//   updated_at: string
+//   // Campos calculados o de JOIN
+//   cliente?: string
+//   empresa?: string
+//   pedido?: string
+// }
 
-const albaranesData: Albaran[] = [
-  {
-    id: "ALB-2025-001",
-    pedido: "PED-2025-001",
-    cliente: "María García R.",
-    empresa: "Eventos Elegantes SL",
-    fechaEmision: "2025-01-10",
-    fechaEntrega: "2025-01-15",
-    direccion: "Hotel Majestic...",
-    articulos: 5,
-    estado: "entregado",
-    facturado: true,
-    numeroFactura: "FAC-2025-001",
-    signed: false,
-  },
-  {
-    id: "ALB-2025-002",
-    pedido: "PED-2025-002",
-    cliente: "Juan Martínez L.",
-    empresa: "Corporativo Eventos",
-    fechaEmision: "2025-01-12",
-    fechaEntrega: "2025-01-20",
-    direccion: "Centro de Convenciones...",
-    articulos: 3,
-    estado: "entregado",
-    facturado: false,
-    numeroFactura: null,
-    signed: true,
-    firmaNombre: "Juan Martínez López",
-    firmaDNI: "12345678A",
-  },
-  {
-    id: "ALB-2025-003",
-    pedido: "PED-2025-003",
-    cliente: "Ana Fernández S.",
-    empresa: "Bodas de Ensueño",
-    fechaEmision: "2025-01-08",
-    fechaEntrega: "2025-01-12",
-    direccion: "Finca El Olivar...",
-    articulos: 8,
-    estado: "pendiente",
-    facturado: false,
-    numeroFactura: null,
-    signed: false,
-  },
-]
+// const albaranesData: Albaran[] = [
+//   {
+//     id: "1",
+//     numero_albaran: "ALB-2025-001",
+//     pedido_id: "1",
+//     pedido: "PED-2025-001",
+//     cliente: "María García R.",
+//     empresa: "Eventos Elegantes SL",
+//     fecha_emision: "2025-01-10",
+//     fecha_entrega: "2025-01-15",
+//     direccion_entrega: "Hotel Majestic...",
+//     estado: "entregado",
+//     observaciones: null,
+//     responsable_entrega: null,
+//     firma_cliente: null,
+//     created_at: new Date().toISOString(),
+//     updated_at: new Date().toISOString(),
+//   },
+// ]
 
 // Mapping de colores y etiquetas
 const statusColors: { [key: string]: "default" | "secondary" | "destructive" | "outline" } = {
@@ -110,45 +85,29 @@ export function AlbaranesList() {
     router.push(`/facturacion/albaran/editar/${albaranId}`)
   }
 
-  const handleDelete = async (albaranId: string) => {
-    if (!confirm("¿Estás seguro de que deseas eliminar este albarán?")) return
-
-    const result = await deleteAlbaran(albaranId)
-    if (result.success) {
-      // Recargar la lista
-      loadAlbaranes()
-    } else {
-      alert(`Error al eliminar: ${result.error}`)
-    }
-  }
-
-  const loadAlbaranes = async () => {
-    setIsLoading(true)
-    const result = await getAlbaranes()
-
-    if (result.success) {
-      setAlbaranes(result.data)
-    } else {
-      console.error("Error cargando albaranes:", result.error)
-      // Usar datos estáticos como fallback si falla la conexión
-      setAlbaranes(albaranesData)
-    }
-    setIsLoading(false)
-  }
-
   useEffect(() => {
-    loadAlbaranes()
+    const fetchAlbaranes = async () => {
+      try {
+        const data = await getAlbaranes()
+        setAlbaranes(data)
+      } catch (error) {
+        console.error("[v0] Error cargando albaranes:", error)
+        setAlbaranes([])
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchAlbaranes()
   }, [])
 
-  // Filtrado (se mantiene igual)
   const filteredAlbaranes = albaranes.filter(
     (albaran) =>
-      albaran.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      albaran.cliente.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      albaran.empresa.toLowerCase().includes(searchTerm.toLowerCase()),
+      albaran.numero_albaran.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      albaran.cliente?.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      albaran.cliente?.email.toLowerCase().includes(searchTerm.toLowerCase()),
   )
 
-  // Estado de carga (se mantiene igual)
   if (isLoading) {
     return <div className="text-center p-8 text-lg font-medium">Cargando albaranes...</div>
   }
@@ -159,7 +118,7 @@ export function AlbaranesList() {
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Buscar por ID, Cliente o Empresa..."
+            placeholder="Buscar por ID, Cliente o Email..."
             className="pl-9 w-[300px]"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -178,7 +137,7 @@ export function AlbaranesList() {
                     ID
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Cliente/Empresa
+                    Cliente/Email
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Fecha Entrega
@@ -199,14 +158,14 @@ export function AlbaranesList() {
                   filteredAlbaranes.map((albaran) => (
                     <tr key={albaran.id}>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-card-foreground">
-                        {albaran.id}
+                        {albaran.numero_albaran}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-card-foreground">{albaran.cliente}</div>
-                        <div className="text-xs text-muted-foreground">{albaran.empresa}</div>
+                        <div className="text-sm font-medium text-card-foreground">{albaran.cliente?.nombre}</div>
+                        <div className="text-xs text-muted-foreground">{albaran.cliente?.email}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
-                        {albaran.fechaEntrega}
+                        {albaran.fecha_entrega || "Sin fecha"}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <Badge variant={statusColors[albaran.estado] || "outline"}>
@@ -215,10 +174,12 @@ export function AlbaranesList() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <Badge
-                          variant={albaran.signed ? "default" : "secondary"}
-                          className={albaran.signed ? "bg-green-500 hover:bg-green-600" : "bg-red-500 hover:bg-red-600"}
+                          variant={albaran.firma_cliente ? "default" : "secondary"}
+                          className={
+                            albaran.firma_cliente ? "bg-green-500 hover:bg-green-600" : "bg-red-500 hover:bg-red-600"
+                          }
                         >
-                          {albaran.signed ? "Firmado" : "Pendiente"}
+                          {albaran.firma_cliente ? "Firmado" : "Pendiente"}
                         </Badge>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -233,19 +194,19 @@ export function AlbaranesList() {
                               <Eye className="mr-2 h-4 w-4" />
                               Ver Detalles
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleEdit(albaran.id)} disabled={albaran.signed}>
+                            <DropdownMenuItem onClick={() => handleEdit(albaran.id)} disabled={!!albaran.firma_cliente}>
                               <Edit className="mr-2 h-4 w-4" />
-                              Editar {!albaran.signed ? "" : "(Bloqueado)"}
+                              Editar {!albaran.firma_cliente ? "" : "(Bloqueado)"}
                             </DropdownMenuItem>
                             <DropdownMenuItem>
                               <Download className="mr-2 h-4 w-4" />
                               Descargar PDF
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleSign(albaran)} disabled={albaran.signed}>
+                            <DropdownMenuItem onClick={() => handleSign(albaran)} disabled={!!albaran.firma_cliente}>
                               <Signature className="mr-2 h-4 w-4" />
-                              Firmar {!albaran.signed ? "" : "(Firmado)"}
+                              Firmar {!albaran.firma_cliente ? "" : "(Firmado)"}
                             </DropdownMenuItem>
-                            <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(albaran.id)}>
+                            <DropdownMenuItem className="text-red-600">
                               <Trash2 className="mr-2 h-4 w-4" />
                               Eliminar
                             </DropdownMenuItem>
@@ -267,16 +228,15 @@ export function AlbaranesList() {
         </CardContent>
       </Card>
 
+      {/* Modal de Firma */}
       {selectedAlbaran && (
         <SignatureModal
           isOpen={showSignatureModal}
           onClose={() => setShowSignatureModal(false)}
           albaranId={selectedAlbaran.id}
-          onSignatureSave={(data) => {
-            console.log("Firma guardada para el albarán:", selectedAlbaran.id, data)
+          onSignatureSave={() => {
             setShowSignatureModal(false)
-            // Recargar la lista para mostrar el estado actualizado
-            loadAlbaranes()
+            window.location.reload()
           }}
         />
       )}
